@@ -1,0 +1,21 @@
+{
+    "Project": {
+        "Name": "Windows Mod",
+        "Version": "1.0.0"
+    },
+
+    "Paths": {
+        "Root": "C:\\Windows-Mod",
+        "ISO": "C:\\Windows-Mod\\ISO",
+        "Extract": "C:\\Windows-Mod\\Extract",
+        "Mount": "C:\\Windows-Mod\\Mount",
+        "Output": "C:\\Windows-Mod\\Output",
+        "Logs": "C:\\Windows-Mod\\Logs",
+        "Installers": "C:\\Windows-Mod\\Installers"
+    },
+
+    "Windows": {
+        "Edition": "Windows 11 Pro",
+        "Index": 1
+    }
+}
