@@ -71,7 +71,10 @@ $Steps = @(
     },
 
     # Features
-
+@{
+    Name = "Setup PostInstall"
+    Path = "$Root\Scripts\Features\SetupPostInstall.ps1"
+},
     @{
         Name = "Unmount Image"
         Path = "$Root\Scripts\Core\UnmountImage.ps1"
