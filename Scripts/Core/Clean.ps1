@@ -26,6 +26,10 @@ if (Test-MountedImage) {
 
 }
 
+Write-Log "Limpando Mount..."
+
+Clear-Folder $MountPath
+
 # ----------------------------------------------------------
 # Limpar pastas
 # ----------------------------------------------------------
@@ -45,23 +49,5 @@ foreach ($Folder in $Folders) {
     Clear-Folder $Folder
 
 }
-
-# ----------------------------------------------------------
-# Limpar ISOs
-# ----------------------------------------------------------
-
-Write-Log "Removendo ISOs..."
-
-Get-ChildItem $ISOPath -Filter *.iso -ErrorAction SilentlyContinue |
-    Remove-Item -Force -ErrorAction SilentlyContinue
-
-# ----------------------------------------------------------
-# Limpar instaladores
-# ----------------------------------------------------------
-
-Write-Log "Removendo instaladores..."
-
-Get-ChildItem $InstallersPath -Recurse -File -ErrorAction SilentlyContinue |
-    Remove-Item -Force -ErrorAction SilentlyContinue
 
 Write-Log "Limpeza concluida." "SUCCESS"
