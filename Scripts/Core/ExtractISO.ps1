@@ -1,4 +1,4 @@
-# ==========================================================
+﻿# ==========================================================
 # Windows Mod - Extract ISO
 # ==========================================================
 
@@ -7,19 +7,34 @@
 Write-Log "Iniciando extração da ISO..."
 
 # ----------------------------------------------------------
-# Verificar ISO
+# Verificar ISO (loop até encontrar exatamente uma)
 # ----------------------------------------------------------
 
-$IsoFiles = Get-ChildItem $ISOPath -Filter *.iso
+while ($true) {
 
-if ($IsoFiles.Count -eq 0) {
-    Write-Log "Nenhuma ISO encontrada em $ISOPath" "ERROR"
-    exit 1
-}
+    $IsoFiles = Get-ChildItem $ISOPath -Filter *.iso -ErrorAction SilentlyContinue
 
-if ($IsoFiles.Count -gt 1) {
-    Write-Log "Mais de uma ISO encontrada em $ISOPath. Deixe apenas uma ISO na pasta." "ERROR"
-    exit 1
+    if ($IsoFiles.Count -eq 1) {
+        break
+    }
+
+    if ($IsoFiles.Count -gt 1) {
+        Write-Log "Mais de uma ISO encontrada em $ISOPath. Deixe apenas uma." "WARNING"
+    }
+    else {
+        Write-Log "Nenhuma ISO encontrada em $ISOPath" "WARNING"
+    }
+
+    Write-Host ""
+    Write-Host "Coloque APENAS o arquivo .iso do Windows dentro de:" -ForegroundColor Yellow
+    Write-Host "  $ISOPath" -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "Pressione qualquer tecla para tentar novamente (CTRL+C para cancelar)..." -ForegroundColor Yellow
+
+    $null = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+
+    Write-Host ""
+
 }
 
 $IsoFile = $IsoFiles[0].FullName
@@ -108,3 +123,5 @@ Write-Log "Desmontando ISO..."
 Dismount-DiskImage -ImagePath $IsoFile
 
 Write-Log "Extração concluída com sucesso." "SUCCESS"
+
+exit 0

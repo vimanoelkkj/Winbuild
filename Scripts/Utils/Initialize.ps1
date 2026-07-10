@@ -1,12 +1,23 @@
-# ==========================================================
+﻿# ==========================================================
 # Windows Mod - Initialize
 # ==========================================================
+#
+# Este arquivo é sempre dot-sourced a partir de outro script (Build.ps1
+# ou os scripts em Scripts\Core). Dentro de um script dot-sourced, o
+# $PSScriptRoot do PRÓPRIO arquivo continua correto independente de
+# quem o chamou — por isso conseguimos descobrir a raiz do projeto sem
+# depender de nenhum caminho fixo tipo "C:\Windows-Mod".
+#
+# Scripts\Utils\Initialize.ps1 -> raiz do projeto é dois níveis acima.
+# ==========================================================
 
-$ConfigPath = "C:\Windows-Mod\Config\BuildConfig.json"
+$Global:ProjectRoot = (Resolve-Path "$PSScriptRoot\..\..").Path
+
+$ConfigPath = Join-Path $ProjectRoot "Config\BuildConfig.json"
 
 if (!(Test-Path $ConfigPath)) {
     Write-Host ""
-    Write-Host "ERRO: BuildConfig.json não encontrado." -ForegroundColor Red
+    Write-Host "ERRO: BuildConfig.json não encontrado em $ConfigPath" -ForegroundColor Red
     exit 1
 }
 
@@ -15,14 +26,41 @@ $Global:Config = Get-Content $ConfigPath -Raw | ConvertFrom-Json
 # ----------------------------------------------------------
 # Caminhos
 # ----------------------------------------------------------
+#
+# Cada caminho no BuildConfig.json pode ser:
+#   - Absoluto  (ex: "D:\Windows-Mod\Extract")   -> usado como está
+#   - Relativo  (ex: ".\Extract" ou "Extract")   -> resolvido a partir
+#                                                    da raiz do projeto
+#
+# Isso permite tanto rodar tudo de forma portátil (relativo) quanto
+# apontar pastas pesadas (Extract/Mount, que podem passar de 20GB)
+# para outro disco, se preferir.
 
-$Global:RootPath       = $Config.Paths.Root
-$Global:ISOPath        = $Config.Paths.ISO
-$Global:ExtractPath    = $Config.Paths.Extract
-$Global:MountPath      = $Config.Paths.Mount
-$Global:OutputPath     = $Config.Paths.Output
-$Global:LogsPath       = $Config.Paths.Logs
-$Global:InstallersPath = $Config.Paths.Installers
+function Resolve-ConfigPath {
+
+    param([string]$Value)
+
+    if ([string]::IsNullOrWhiteSpace($Value)) {
+        return $Value
+    }
+
+    if ([System.IO.Path]::IsPathRooted($Value)) {
+        return $Value
+    }
+
+    return (Join-Path $ProjectRoot $Value)
+
+}
+
+$Global:RootPath         = $ProjectRoot
+$Global:ISOPath          = Resolve-ConfigPath $Config.Paths.ISO
+$Global:ExtractPath      = Resolve-ConfigPath $Config.Paths.Extract
+$Global:MountPath        = Resolve-ConfigPath $Config.Paths.Mount
+$Global:OutputPath       = Resolve-ConfigPath $Config.Paths.Output
+$Global:LogsPath         = Resolve-ConfigPath $Config.Paths.Logs
+$Global:InstallersPath   = Resolve-ConfigPath $Config.Paths.Installers
+$Global:DriversPath      = Resolve-ConfigPath $Config.Paths.Drivers
+$Global:AutounattendPath = Resolve-ConfigPath $Config.Paths.Autounattend
 
 # ----------------------------------------------------------
 # Windows
@@ -55,13 +93,14 @@ else {
 # ----------------------------------------------------------
 
 @(
-    $RootPath,
     $ISOPath,
     $ExtractPath,
     $MountPath,
     $OutputPath,
     $LogsPath,
-    $InstallersPath
+    $InstallersPath,
+    $DriversPath,
+    $AutounattendPath
 ) | ForEach-Object {
 
     if (!(Test-Path $_)) {
@@ -82,6 +121,7 @@ Write-Host ""
 
 Write-Host "Projeto.....: $($Config.Project.Name)"
 Write-Host "Versão......: $($Config.Project.Version)"
+Write-Host "Raiz........: $ProjectRoot"
 Write-Host "Windows.....: $Edition"
 Write-Host "Índice......: $Index"
 Write-Host "DISM........: $DismSource"

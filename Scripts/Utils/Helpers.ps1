@@ -1,4 +1,4 @@
-# ==========================================================
+﻿# ==========================================================
 # Windows Mod - Helpers
 # ==========================================================
 
@@ -88,5 +88,29 @@ function Test-MountedImage {
     $Result = & $DismPath /Get-MountedImageInfo 2>$null
 
     return ($Result -match [regex]::Escape($MountPath))
+
+}
+
+# ----------------------------------------------------------
+# Registra o resultado de uma etapa pro resumo final do Build.ps1
+# (usa $Global: pra sobreviver entre as chamadas "& $ScriptPath",
+# já que todas rodam no mesmo processo/sessão do PowerShell)
+# ----------------------------------------------------------
+
+function Set-Summary {
+
+    param(
+        [Parameter(Mandatory)]
+        [string]$Step,
+
+        [Parameter(Mandatory)]
+        [string]$Result
+    )
+
+    if (!$Global:BuildSummary) {
+        $Global:BuildSummary = [ordered]@{}
+    }
+
+    $Global:BuildSummary[$Step] = $Result
 
 }

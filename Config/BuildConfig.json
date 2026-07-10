@@ -5,13 +5,14 @@
     },
 
     "Paths": {
-        "Root": "C:\\Windows-Mod",
-        "ISO": "C:\\Windows-Mod\\ISO",
-        "Extract": "C:\\Windows-Mod\\Extract",
-        "Mount": "C:\\Windows-Mod\\Mount",
-        "Output": "C:\\Windows-Mod\\Output",
-        "Logs": "C:\\Windows-Mod\\Logs",
-        "Installers": "C:\\Windows-Mod\\Installers"
+        "ISO": "ISO",
+        "Extract": "Extract",
+        "Mount": "Mount",
+        "Output": "Output",
+        "Logs": "Logs",
+        "Installers": "Installers",
+        "Drivers": "Drivers",
+        "Autounattend": "Autounattend"
     },
 
     "Windows": {

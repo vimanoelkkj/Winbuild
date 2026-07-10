@@ -1,4 +1,4 @@
-# ==========================================================
+﻿# ==========================================================
 # Windows Mod - Clean
 # ==========================================================
 
@@ -18,7 +18,7 @@ if (!(Test-Administrator)) {
 
 if (Test-MountedImage) {
 
-    Write-Log "Imagem montada encontrada. Descartando alteracoes..."
+    Write-Log "Imagem montada encontrada. Descartando alterações..."
 
     & $DismPath /Unmount-Image `
         /MountDir:"$MountPath" `
@@ -26,12 +26,8 @@ if (Test-MountedImage) {
 
 }
 
-Write-Log "Limpando Mount..."
-
-Clear-Folder $MountPath
-
 # ----------------------------------------------------------
-# Limpar pastas
+# Limpar pastas (só as que realmente têm algo dentro)
 # ----------------------------------------------------------
 
 $Folders = @(
@@ -44,10 +40,23 @@ $Folders = @(
 
 foreach ($Folder in $Folders) {
 
+    if (!(Test-Path $Folder)) {
+        continue
+    }
+
+    $HasContent = [bool](Get-ChildItem $Folder -Force -ErrorAction SilentlyContinue)
+
+    if (!$HasContent) {
+        Write-Log "Nada para limpar: $Folder. Pulando..."
+        continue
+    }
+
     Write-Log "Limpando: $Folder"
 
     Clear-Folder $Folder
 
 }
 
-Write-Log "Limpeza concluida." "SUCCESS"
+Write-Log "Limpeza concluída." "SUCCESS"
+
+exit 0
