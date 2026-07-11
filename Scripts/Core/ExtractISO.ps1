@@ -3,6 +3,7 @@
 # ==========================================================
 
 . "$PSScriptRoot\..\Utils\Initialize.ps1"
+. "$PSScriptRoot\..\Utils\Helpers.ps1"
 
 Write-Log "Iniciando extração da ISO..."
 
@@ -121,6 +122,86 @@ Write-Log "Atributos removidos."
 Write-Log "Desmontando ISO..."
 
 Dismount-DiskImage -ImagePath $IsoFile
+
+# ----------------------------------------------------------
+# Detectar edição real dentro da ISO (não confiar só no texto
+# fixo do BuildConfig.json) e persistir o que foi detectado
+# ----------------------------------------------------------
+
+Write-Log "Detectando edição do Windows na imagem..."
+
+$WimPath = Join-Path $ExtractPath "sources\install.wim"
+
+try {
+
+    $Images = Get-WindowsImage -ImagePath $WimPath -ErrorAction Stop
+
+}
+catch {
+
+    Write-Log "Não foi possível ler informações do install.wim: $($_.Exception.Message)" "ERROR"
+
+    exit 1
+
+}
+
+if ($Images.Count -eq 1) {
+
+    # ISO com uma edição só (a maioria das ISOs "consumer" de hoje em
+    # dia é assim) - usa ela direto, não importa o que estava configurado
+    $Selected = $Images[0]
+
+}
+else {
+
+    # ISO multi-edição (ex: Windows com Home/Pro/Education juntos)
+    $Selected = $Images | Where-Object { $_.ImageIndex -eq $Index }
+
+    if (!$Selected) {
+
+        Write-Log "O índice $Index (configurado em Windows.Index) não existe nesta ISO." "WARNING"
+
+        Write-Host ""
+        Write-Host "Esta ISO tem mais de uma edição. Escolha uma:" -ForegroundColor Yellow
+        Write-Host ""
+
+        foreach ($Img in $Images) {
+            Write-Host ("  [{0}] {1}" -f $Img.ImageIndex, $Img.ImageName)
+        }
+
+        Write-Host ""
+
+        do {
+            $Choice = Read-Host "Digite o número do índice desejado"
+        } while ($Images.ImageIndex -notcontains [int]$Choice)
+
+        $Selected = $Images | Where-Object { $_.ImageIndex -eq [int]$Choice }
+
+    }
+
+}
+
+Write-Log "Edição detectada: [$($Selected.ImageIndex)] $($Selected.ImageName)" "SUCCESS"
+
+# ----------------------------------------------------------
+# Atualizar BuildConfig.json com o que foi realmente detectado
+# ----------------------------------------------------------
+
+if ($Config.Windows.Edition -ne $Selected.ImageName -or $Config.Windows.Index -ne $Selected.ImageIndex) {
+
+    $Config.Windows.Edition = $Selected.ImageName
+    $Config.Windows.Index   = $Selected.ImageIndex
+
+    $Config | ConvertTo-Json -Depth 10 | Set-Content -Path $ConfigPath -Encoding UTF8
+
+    Write-Log "BuildConfig.json atualizado com a edição detectada." "SUCCESS"
+
+    $Global:Edition = $Selected.ImageName
+    $Global:Index   = $Selected.ImageIndex
+
+}
+
+Set-Summary "Windows detectado" "$($Selected.ImageName) (índice $($Selected.ImageIndex))"
 
 Write-Log "Extração concluída com sucesso." "SUCCESS"
 

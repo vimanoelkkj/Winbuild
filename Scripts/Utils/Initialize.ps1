@@ -69,6 +69,13 @@ $Global:AutounattendPath = Resolve-ConfigPath $Config.Paths.Autounattend
 $Global:Edition = $Config.Windows.Edition
 $Global:Index   = $Config.Windows.Index
 
+if ($Config.Limits.MaxWimSizeGB) {
+    $Global:MaxWimSizeGB = $Config.Limits.MaxWimSizeGB
+}
+else {
+    $Global:MaxWimSizeGB = 30
+}
+
 # ----------------------------------------------------------
 # Detectar DISM
 # ----------------------------------------------------------

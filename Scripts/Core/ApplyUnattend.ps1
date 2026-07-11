@@ -66,6 +66,7 @@ while ($true) {
     if ($Key.Character -eq 's' -or $Key.Character -eq 'S') {
         Write-Log "Etapa de unattend pulada pelo usuário." "WARNING"
         Set-Summary "Unattend" "Pulado (setup interativo)"
+        $Global:StepSkipped = $true
         exit 0
     }
 

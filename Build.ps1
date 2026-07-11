@@ -23,25 +23,37 @@ $Root = $PSScriptRoot
 # pra você conseguir ver o resultado do build.
 
 if (!(Test-Administrator)) {
+
     Write-Host ""
     Write-Host "Privilégios de administrador necessários. Solicitando elevação (UAC)..." -ForegroundColor Yellow
+
     $PowerShellArgs = "-NoProfile -ExecutionPolicy Bypass -NoExit -File `"$PSCommandPath`""
+
     $HasWindowsTerminal = [bool](Get-Command wt.exe -ErrorAction SilentlyContinue)
+
     try {
+
         if ($HasWindowsTerminal) {
+
             # Abre uma aba do Windows Terminal já elevada rodando o powershell.exe
             Start-Process -FilePath "wt.exe" -ArgumentList "powershell.exe $PowerShellArgs" -Verb RunAs
+
         }
         else {
+
             # Fallback: sem Windows Terminal instalado, usa o console clássico
             Start-Process -FilePath "powershell.exe" -ArgumentList $PowerShellArgs -Verb RunAs
+
         }
+
     }
     catch {
         Write-Host ""
         Write-Host "Elevação cancelada ou falhou. Rode o PowerShell como Administrador manualmente." -ForegroundColor Red
     }
+
     exit
+
 }
 
 . "$Root\Scripts\Utils\Initialize.ps1"
@@ -51,16 +63,21 @@ $Global:BuildSummary = [ordered]@{}
 $StartTime = Get-Date
 
 function Invoke-BuildStep {
+
     param(
         [Parameter(Mandatory)]
         [int]$Number,
+
         [Parameter(Mandatory)]
         [int]$Total,
+
         [Parameter(Mandatory)]
         [string]$Name,
+
         [Parameter(Mandatory)]
         [string]$ScriptPath
     )
+
     Write-Host ""
     Write-Log "[$Number/$Total] $Name"
 
@@ -69,12 +86,21 @@ function Invoke-BuildStep {
         exit 1
     }
 
+    $Global:StepSkipped = $false
+
     & $ScriptPath
+
     if ($LASTEXITCODE -ne 0) {
         Write-Log "Falha na etapa: $Name" "ERROR"
         exit 1
     }
-    Write-Log "$Name concluido." "SUCCESS"
+
+    if ($Global:StepSkipped) {
+        Write-Log "$Name pulada pelo usuário." "WARNING"
+    }
+    else {
+        Write-Log "$Name concluido." "SUCCESS"
+    }
 }
 
 Write-Host ""
@@ -113,6 +139,10 @@ $Steps = @(
         Path = "$Root\Scripts\Core\ApplyUnattend.ps1"
     },
     @{
+        Name = "Check Image Size"
+        Path = "$Root\Scripts\Core\CheckImageSize.ps1"
+    },
+    @{
         Name = "Create ISO"
         Path = "$Root\Scripts\Core\CreateISO.ps1"
     }
@@ -135,11 +165,15 @@ Write-Host "=====================================" -ForegroundColor Green
 Write-Host ""
 
 if ($Global:BuildSummary.Count -gt 0) {
+
     Write-Host "Resumo:" -ForegroundColor Cyan
+
     foreach ($Key in $Global:BuildSummary.Keys) {
         Write-Host ("  {0,-10}: {1}" -f $Key, $Global:BuildSummary[$Key])
     }
+
     Write-Host ""
+
 }
 
 Write-Log "Output: $OutputPath"

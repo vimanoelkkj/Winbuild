@@ -60,6 +60,7 @@ while ($true) {
     if ($Key.Character -eq 's' -or $Key.Character -eq 'S') {
         Write-Log "Etapa de drivers pulada pelo usuário." "WARNING"
         Set-Summary "Drivers" "Pulado"
+        $Global:StepSkipped = $true
         exit 0
     }
 
@@ -83,9 +84,22 @@ foreach ($Folder in $DriverFolders) {
         continue
     }
 
+    # Copia pra uma pasta temporária antes de injetar, pra poder remover
+    # arquivos problemáticos sem mexer nos arquivos originais do usuário
+    # em Drivers\.
+    $StagingFolder = Join-Path $RootPath "Temp\DriverStaging\$($Folder.Name)"
+
+    if (Test-Path $StagingFolder) {
+        Remove-Item $StagingFolder -Recurse -Force
+    }
+
+    New-Item -ItemType Directory -Force -Path $StagingFolder | Out-Null
+
+    robocopy $Folder.FullName $StagingFolder /E /NFL /NDL /NJH /NJS | Out-Null
+
     Write-Log "Injetando driver: $($Folder.Name) ($($InfFiles.Count) .inf encontrado(s))"
 
-    & $DismPath /Image:"$MountPath" /Add-Driver /Driver:"$($Folder.FullName)" /Recurse
+    & $DismPath /Image:"$MountPath" /Add-Driver /Driver:"$StagingFolder" /Recurse
 
     if ($LASTEXITCODE -eq 0) {
         Write-Log "Driver '$($Folder.Name)' injetado com sucesso." "SUCCESS"
@@ -95,6 +109,8 @@ foreach ($Folder in $DriverFolders) {
         Write-Log "Falha ao injetar driver '$($Folder.Name)' (código $LASTEXITCODE)." "ERROR"
         $FailCount++
     }
+
+    Remove-Item $StagingFolder -Recurse -Force -ErrorAction SilentlyContinue
 
 }
 

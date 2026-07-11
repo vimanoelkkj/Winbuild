@@ -18,5 +18,9 @@
     "Windows": {
         "Edition": "Windows 11 Pro",
         "Index": 1
+    },
+
+    "Limits": {
+        "MaxWimSizeGB": 30
     }
 }

@@ -6,6 +6,13 @@
 # montada e gera um SetupComplete.cmd que os executa silenciosamente
 # no fim da instalação (antes do primeiro logon).
 #
+# IMPORTANTE: depois de cada instalador rodar, o próprio arquivo
+# copiado é apagado dentro do SetupComplete.cmd (rd /s /q). Sem isso,
+# os instaladores (que às vezes são bem grandes - jogos, suítes, etc.)
+# ficariam parados pra sempre em C:\Windows\Setup\Scripts\Apps no
+# sistema já instalado, inchando o tamanho final do Windows sem motivo
+# nenhum (o app já foi instalado, o instalador não serve mais de nada).
+#
 # Estrutura esperada em $InstallersPath (a que já existe no projeto):
 #
 #   Installers\
@@ -47,7 +54,9 @@ if (!(Test-MountedImage)) {
 # ----------------------------------------------------------
 
 while ($true) {
+
     $AppFolders = Get-ChildItem $InstallersPath -Directory -ErrorAction SilentlyContinue
+
     if ($AppFolders -and $AppFolders.Count -gt 0) {
         break
     }
@@ -58,14 +67,18 @@ while ($true) {
     Write-Host "  $InstallersPath" -ForegroundColor Yellow
     Write-Host ""
     Write-Host "Pressione [S] para pular esta etapa, ou qualquer outra tecla para tentar novamente..." -ForegroundColor Yellow
+
     $Key = $Host.UI.RawUI.ReadKey("NoEcho,IncludeKeyDown")
+
     Write-Host ""
 
     if ($Key.Character -eq 's' -or $Key.Character -eq 'S') {
         Write-Log "Etapa de aplicativos pulada pelo usuário." "WARNING"
         Set-Summary "Apps" "Pulado"
+        $Global:StepSkipped = $true
         exit 0
     }
+
 }
 
 Write-Log "Aplicativos encontrados: $($AppFolders.Count)"
@@ -77,6 +90,7 @@ Write-Log "Aplicativos encontrados: $($AppFolders.Count)"
 $SetupScriptsPath = Join-Path $MountPath "Windows\Setup\Scripts"
 $AppsDestPath      = Join-Path $SetupScriptsPath "Apps"
 $SetupCompletePath = Join-Path $SetupScriptsPath "SetupComplete.cmd"
+
 New-Item -ItemType Directory -Force -Path $AppsDestPath | Out-Null
 
 # ----------------------------------------------------------
@@ -87,8 +101,11 @@ $InstallBlocks = @()
 $CopyFailCount = 0
 
 foreach ($App in $AppFolders) {
+
     Write-Log "Copiando aplicativo: $($App.Name)"
+
     $Dest = Join-Path $AppsDestPath $App.Name
+
     $Result = robocopy $App.FullName $Dest /E
     $ExitCode = $LASTEXITCODE
 
@@ -99,29 +116,43 @@ foreach ($App in $AppFolders) {
     }
 
     $RelativeDest = "%~dp0Apps\$($App.Name)"
+
     $CustomInstall = Get-ChildItem $App.FullName -Filter "install.cmd" -ErrorAction SilentlyContinue
 
     if ($CustomInstall) {
+
         Write-Log "'$($App.Name)' usa install.cmd próprio."
-        $InstallBlocks += "echo Instalando $($App.Name)...`r`ncd /d `"$RelativeDest`"`r`ncall install.cmd >> `"%~dp0Logs\$($App.Name).log`" 2>&1`r`n"
+
+        $InstallBlocks += "echo Instalando $($App.Name)...`r`ncd /d `"$RelativeDest`"`r`ncall install.cmd >> `"%~dp0Logs\$($App.Name).log`" 2>&1`r`ncd /d `"%~dp0`"`r`nrd /s /q `"$RelativeDest`" 2>nul`r`n"
+
     }
     else {
+
         $Exe = Get-ChildItem $App.FullName -Filter *.exe -ErrorAction SilentlyContinue | Select-Object -First 1
         $Msi = Get-ChildItem $App.FullName -Filter *.msi -ErrorAction SilentlyContinue | Select-Object -First 1
 
         if ($Msi) {
+
             Write-Log "'$($App.Name)' instalado via msiexec (/qn)."
 
-            $InstallBlocks += "echo Instalando $($App.Name)...`r`nmsiexec /i `"$RelativeDest\$($Msi.Name)`" /qn /norestart >> `"%~dp0Logs\$($App.Name).log`" 2>&1`r`n"
+            $InstallBlocks += "echo Instalando $($App.Name)...`r`nmsiexec /i `"$RelativeDest\$($Msi.Name)`" /qn /norestart >> `"%~dp0Logs\$($App.Name).log`" 2>&1`r`nrd /s /q `"$RelativeDest`" 2>nul`r`n"
+
         }
         elseif ($Exe) {
+
             Write-Log "'$($App.Name)' instalado via /S (switch genérico, pode não funcionar para todo instalador)." "WARNING"
-            $InstallBlocks += "echo Instalando $($App.Name)...`r`n`"$RelativeDest\$($Exe.Name)`" /S >> `"%~dp0Logs\$($App.Name).log`" 2>&1`r`n"
+
+            $InstallBlocks += "echo Instalando $($App.Name)...`r`n`"$RelativeDest\$($Exe.Name)`" /S >> `"%~dp0Logs\$($App.Name).log`" 2>&1`r`nrd /s /q `"$RelativeDest`" 2>nul`r`n"
+
         }
         else {
-            Write-Log "Nenhum .exe/.msi encontrado em '$($App.Name)'. Pulando instalação (arquivos copiados mesmo assim)." "WARNING"
+
+            Write-Log "Nenhum .exe/.msi encontrado em '$($App.Name)'. Pulando instalação (arquivos ficam até a limpeza final)." "WARNING"
+
         }
+
     }
+
 }
 
 if ($CopyFailCount -gt 0) {
@@ -140,7 +171,9 @@ New-Item -ItemType Directory -Force -Path (Join-Path $SetupScriptsPath "Logs") |
 
 $Header = "@echo off`r`n"
 
-$Content = $Header + ($InstallBlocks -join "`r`n")
+$Footer = "`r`necho Limpando instaladores restantes...`r`nrd /s /q `"%~dp0Apps`" 2>nul`r`n"
+
+$Content = $Header + ($InstallBlocks -join "`r`n") + $Footer
 
 Set-Content -Path $SetupCompletePath -Value $Content -Encoding ASCII
 
