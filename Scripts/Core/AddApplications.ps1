@@ -1,43 +1,44 @@
 ﻿# ==========================================================
-# Windows Mod - Add Applications
+# Windows Mod - Add Applications (via winget)
 # ==========================================================
 #
-# Copia os instaladores de $InstallersPath para dentro da imagem
-# montada e gera um SetupComplete.cmd que os executa silenciosamente
-# no fim da instalação (antes do primeiro logon).
+# Em vez de copiar instaladores pra dentro da imagem (o que inchava o
+# WIM e deixava versões desatualizadas), esse script:
 #
-# IMPORTANTE: depois de cada instalador rodar, o próprio arquivo
-# copiado é apagado dentro do SetupComplete.cmd (rd /s /q). Sem isso,
-# os instaladores (que às vezes são bem grandes - jogos, suítes, etc.)
-# ficariam parados pra sempre em C:\Windows\Setup\Scripts\Apps no
-# sistema já instalado, inchando o tamanho final do Windows sem motivo
-# nenhum (o app já foi instalado, o instalador não serve mais de nada).
+#   1. Lê a lista de IDs de pacote do winget em:
+#        Installers\winget-apps.txt   (um ID por linha, # comenta)
 #
-# Estrutura esperada em $InstallersPath (a que já existe no projeto):
+#   2. Gera um InstallApps.ps1 e copia ele direto pra dentro da imagem
+#      em C:\ProgramData\WinbuildApps\InstallApps.ps1
 #
-#   Installers\
-#     Steam\
-#       SteamSetup.exe
-#     Firefox\
-#       firefox_installer.exe
-#       install.cmd          <- opcional, ver abaixo
+#   3. Configura uma chave RunOnce no registro (via SetupComplete.cmd,
+#      que roda como SYSTEM no fim do setup) apontando pro script.
 #
-# Por padrão o script tenta detectar o instalador (.exe ou .msi) e
-# rodar com switches silenciosos genéricos (/S, /verysilent, /qn).
-# Isso NÃO funciona para todo instalador. Se um app precisar de um
-# switch específico, crie um "install.cmd" dentro da pasta dele — se
-# esse arquivo existir, ele é chamado no lugar da detecção automática,
-# com o diretório do próprio app como pasta de trabalho. Exemplo:
+# O Windows executa entradas RunOnce automaticamente no PRÓXIMO logon
+# de qualquer usuário, e a entrada se apaga sozinha depois de rodar -
+# isso é necessário porque o winget não funciona corretamente rodando
+# como SYSTEM (antes do primeiro logon); ele só fica realmente
+# disponível depois que algum usuário loga pela primeira vez, já que o
+# registro do App Installer pela Microsoft Store é assíncrono. Por
+# isso o InstallApps.ps1 também espera/tenta de novo por um tempo
+# antes de desistir.
 #
-#   install.cmd:
-#     SteamSetup.exe /S
+# Exemplo de winget-apps.txt:
+#
+#   # Essenciais
+#   Valve.Steam
+#   Spotify.Spotify
+#   RARLab.WinRAR
+#   Vencord.Vesktop
+#
+# Pra descobrir o ID certo de um app: winget search "nome do app"
 #
 # ==========================================================
 
 . "$PSScriptRoot\..\Utils\Initialize.ps1"
 . "$PSScriptRoot\..\Utils\Helpers.ps1"
 
-Write-Log "Iniciando adição de aplicativos..."
+Write-Log "Iniciando configuração de aplicativos (winget)..."
 
 if (!(Test-Administrator)) {
     Write-Log "Execute este script como Administrador." "ERROR"
@@ -49,22 +50,38 @@ if (!(Test-MountedImage)) {
     exit 1
 }
 
+$AppsListPath = Join-Path $InstallersPath "winget-apps.txt"
+
 # ----------------------------------------------------------
-# Listar apps (loop até achar algo ou usuário pular)
+# Ler a lista (loop até ter algo válido ou usuário pular)
 # ----------------------------------------------------------
 
 while ($true) {
 
-    $AppFolders = Get-ChildItem $InstallersPath -Directory -ErrorAction SilentlyContinue
+    $AppIds = @()
 
-    if ($AppFolders -and $AppFolders.Count -gt 0) {
+    if (Test-Path $AppsListPath) {
+
+        $AppIds = @(
+            Get-Content $AppsListPath |
+                ForEach-Object { $_.Trim() } |
+                Where-Object { $_ -and $_ -notmatch '^\s*#' }
+        )
+
+    }
+
+    if ($AppIds.Count -gt 0) {
         break
     }
 
-    Write-Log "Nenhuma pasta de aplicativo encontrada em $InstallersPath" "WARNING"
+    Write-Log "Nenhum ID de pacote encontrado em $AppsListPath" "WARNING"
     Write-Host ""
-    Write-Host "Coloque as pastas de instaladores dentro de:" -ForegroundColor Yellow
-    Write-Host "  $InstallersPath" -ForegroundColor Yellow
+    Write-Host "Crie o arquivo com um ID de pacote do winget por linha:" -ForegroundColor Yellow
+    Write-Host "  $AppsListPath" -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "Exemplo:" -ForegroundColor Yellow
+    Write-Host "  Valve.Steam" -ForegroundColor Yellow
+    Write-Host "  Spotify.Spotify" -ForegroundColor Yellow
     Write-Host ""
     Write-Host "Pressione [S] para pular esta etapa, ou qualquer outra tecla para tentar novamente..." -ForegroundColor Yellow
 
@@ -81,105 +98,76 @@ while ($true) {
 
 }
 
-Write-Log "Aplicativos encontrados: $($AppFolders.Count)"
+Write-Log "Apps na lista: $($AppIds.Count) ($($AppIds -join ', '))"
 
 # ----------------------------------------------------------
-# Preparar pastas de destino dentro da imagem
+# Gerar InstallApps.ps1 e copiar pra dentro da imagem
 # ----------------------------------------------------------
 
-$SetupScriptsPath = Join-Path $MountPath "Windows\Setup\Scripts"
-$AppsDestPath      = Join-Path $SetupScriptsPath "Apps"
-$SetupCompletePath = Join-Path $SetupScriptsPath "SetupComplete.cmd"
+$AppsInImagePath = Join-Path $MountPath "ProgramData\WinbuildApps"
 
-New-Item -ItemType Directory -Force -Path $AppsDestPath | Out-Null
+New-Item -ItemType Directory -Force -Path $AppsInImagePath | Out-Null
 
-# ----------------------------------------------------------
-# Copiar cada app e montar o bloco de instalação
-# ----------------------------------------------------------
+$AppsArrayLiteral = ($AppIds | ForEach-Object { "    `"$_`"" }) -join "`r`n"
 
-$InstallBlocks = @()
-$CopyFailCount = 0
+$InstallScript = @"
+`$LogPath = "C:\ProgramData\WinbuildApps\install-log.txt"
 
-foreach ($App in $AppFolders) {
+"Iniciando instalação de apps via winget - `$(Get-Date)" | Out-File `$LogPath
 
-    Write-Log "Copiando aplicativo: $($App.Name)"
+# winget só fica disponível depois do primeiro logon (registro
+# assíncrono pela Microsoft Store) - espera até 2 minutos.
+`$Attempts = 0
 
-    $Dest = Join-Path $AppsDestPath $App.Name
-
-    $Result = robocopy $App.FullName $Dest /E
-    $ExitCode = $LASTEXITCODE
-
-    if ($ExitCode -ge 8) {
-        Write-Log "Falha ao copiar '$($App.Name)' (robocopy $ExitCode)." "ERROR"
-        $CopyFailCount++
-        continue
-    }
-
-    $RelativeDest = "%~dp0Apps\$($App.Name)"
-
-    $CustomInstall = Get-ChildItem $App.FullName -Filter "install.cmd" -ErrorAction SilentlyContinue
-
-    if ($CustomInstall) {
-
-        Write-Log "'$($App.Name)' usa install.cmd próprio."
-
-        $InstallBlocks += "echo Instalando $($App.Name)...`r`ncd /d `"$RelativeDest`"`r`ncall install.cmd >> `"%~dp0Logs\$($App.Name).log`" 2>&1`r`ncd /d `"%~dp0`"`r`nrd /s /q `"$RelativeDest`" 2>nul`r`n"
-
-    }
-    else {
-
-        $Exe = Get-ChildItem $App.FullName -Filter *.exe -ErrorAction SilentlyContinue | Select-Object -First 1
-        $Msi = Get-ChildItem $App.FullName -Filter *.msi -ErrorAction SilentlyContinue | Select-Object -First 1
-
-        if ($Msi) {
-
-            Write-Log "'$($App.Name)' instalado via msiexec (/qn)."
-
-            $InstallBlocks += "echo Instalando $($App.Name)...`r`nmsiexec /i `"$RelativeDest\$($Msi.Name)`" /qn /norestart >> `"%~dp0Logs\$($App.Name).log`" 2>&1`r`nrd /s /q `"$RelativeDest`" 2>nul`r`n"
-
-        }
-        elseif ($Exe) {
-
-            Write-Log "'$($App.Name)' instalado via /S (switch genérico, pode não funcionar para todo instalador)." "WARNING"
-
-            $InstallBlocks += "echo Instalando $($App.Name)...`r`n`"$RelativeDest\$($Exe.Name)`" /S >> `"%~dp0Logs\$($App.Name).log`" 2>&1`r`nrd /s /q `"$RelativeDest`" 2>nul`r`n"
-
-        }
-        else {
-
-            Write-Log "Nenhum .exe/.msi encontrado em '$($App.Name)'. Pulando instalação (arquivos ficam até a limpeza final)." "WARNING"
-
-        }
-
-    }
-
+while (!(Get-Command winget -ErrorAction SilentlyContinue) -and `$Attempts -lt 24) {
+    Start-Sleep -Seconds 5
+    `$Attempts++
 }
 
-if ($CopyFailCount -gt 0) {
-    Write-Log "$CopyFailCount aplicativo(s) falharam ao copiar." "ERROR"
-    Set-Summary "Apps" "$CopyFailCount falharam ao copiar"
+if (!(Get-Command winget -ErrorAction SilentlyContinue)) {
+    "winget não ficou disponível a tempo. Abortando." | Out-File `$LogPath -Append
     exit 1
 }
 
+`$Apps = @(
+$AppsArrayLiteral
+)
+
+foreach (`$App in `$Apps) {
+    "Instalando `$App..." | Out-File `$LogPath -Append
+    winget install --id `$App --silent --accept-package-agreements --accept-source-agreements *>> `$LogPath
+}
+
+"Concluído - `$(Get-Date)" | Out-File `$LogPath -Append
+"@
+
+$InstallScriptPath = Join-Path $AppsInImagePath "InstallApps.ps1"
+
+Set-Content -Path $InstallScriptPath -Value $InstallScript -Encoding UTF8
+
+Write-Log "InstallApps.ps1 gerado em $InstallScriptPath" "SUCCESS"
+
 # ----------------------------------------------------------
-# Gerar SetupComplete.cmd
+# Agendar via RunOnce (SetupComplete.cmd roda como SYSTEM, só
+# escreve a chave de registro - quem executa o winget de fato é
+# o próprio Windows, no próximo logon, no contexto do usuário)
 # ----------------------------------------------------------
 
-Write-Log "Gerando SetupComplete.cmd..."
+$SetupScriptsPath = Join-Path $MountPath "Windows\Setup\Scripts"
+$SetupCompletePath = Join-Path $SetupScriptsPath "SetupComplete.cmd"
 
-New-Item -ItemType Directory -Force -Path (Join-Path $SetupScriptsPath "Logs") | Out-Null
+New-Item -ItemType Directory -Force -Path $SetupScriptsPath | Out-Null
 
-$Header = "@echo off`r`n"
+$SetupCompleteContent = @"
+@echo off
+reg add "HKLM\Software\Microsoft\Windows\CurrentVersion\RunOnce" /v WinbuildInstallApps /d "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File C:\ProgramData\WinbuildApps\InstallApps.ps1" /f
+"@
 
-$Footer = "`r`necho Limpando instaladores restantes...`r`nrd /s /q `"%~dp0Apps`" 2>nul`r`n"
+Set-Content -Path $SetupCompletePath -Value $SetupCompleteContent -Encoding ASCII
 
-$Content = $Header + ($InstallBlocks -join "`r`n") + $Footer
+Write-Log "SetupComplete.cmd configurado para agendar a instalação via RunOnce." "SUCCESS"
+Write-Log "Apps serão instalados via winget no primeiro logon do usuário." "SUCCESS"
 
-Set-Content -Path $SetupCompletePath -Value $Content -Encoding ASCII
-
-Write-Log "SetupComplete.cmd gerado em $SetupCompletePath" "SUCCESS"
-Write-Log "Aplicativos serão instalados automaticamente ao fim do setup (antes do primeiro logon)." "SUCCESS"
-
-Set-Summary "Apps" "$($AppFolders.Count) app(s) adicionado(s)"
+Set-Summary "Apps" "$($AppIds.Count) app(s) via winget"
 
 exit 0
