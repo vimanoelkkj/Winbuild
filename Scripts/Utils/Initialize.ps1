@@ -76,6 +76,23 @@ else {
     $Global:MaxWimSizeGB = 30
 }
 
+if ($Config.Drivers.TrimMode) {
+    $Global:TrimMode = $Config.Drivers.TrimMode
+}
+elseif ($Config.Drivers.TrimToHostHardware -eq $false) {
+    $Global:TrimMode = "Off"
+}
+else {
+    $Global:TrimMode = "Ask"
+}
+
+if ($Config.Drivers.TrimThreshold) {
+    $Global:TrimThreshold = $Config.Drivers.TrimThreshold
+}
+else {
+    $Global:TrimThreshold = 10
+}
+
 # ----------------------------------------------------------
 # Detectar DISM
 # ----------------------------------------------------------

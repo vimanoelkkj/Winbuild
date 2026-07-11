@@ -22,5 +22,10 @@
 
     "Limits": {
         "MaxWimSizeGB": 30
+    },
+
+    "Drivers": {
+        "TrimMode": "Ask",
+        "TrimThreshold": 10
     }
 }
