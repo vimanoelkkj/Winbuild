@@ -135,7 +135,7 @@ $AppsArrayLiteral
 
 foreach (`$App in `$Apps) {
     "Instalando `$App..." | Out-File `$LogPath -Append
-    winget install --id `$App --silent --accept-package-agreements --accept-source-agreements *>> `$LogPath
+    winget install --id `$App --scope user --silent --accept-package-agreements --accept-source-agreements *>> `$LogPath
 }
 
 "Concluído - `$(Get-Date)" | Out-File `$LogPath -Append
@@ -160,6 +160,7 @@ New-Item -ItemType Directory -Force -Path $SetupScriptsPath | Out-Null
 
 $SetupCompleteContent = @"
 @echo off
+powershell.exe -NoProfile -Command "Set-ExecutionPolicy -Scope LocalMachine -ExecutionPolicy Bypass -Force"
 reg add "HKLM\Software\Microsoft\Windows\CurrentVersion\RunOnce" /v WinbuildInstallApps /d "powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File C:\ProgramData\WinbuildApps\InstallApps.ps1" /f
 "@
 

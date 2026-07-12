@@ -95,6 +95,80 @@ catch {
 Write-Log "XML validado com sucesso."
 
 # ----------------------------------------------------------
+# Resumir o que o unattend vai fazer e pedir confirmação
+# ----------------------------------------------------------
+
+$Categories = Get-UnattendSummary -XmlPath $XmlFile.FullName
+
+Write-Host ""
+Write-Host "=== O que este autounattend.xml vai fazer ===" -ForegroundColor Cyan
+
+$TotalItems = 0
+$HasWarnings = $false
+
+if ($Categories.Count -eq 0) {
+
+    Write-Host ""
+    Write-Host "Nada de impacto crítico detectado (sem apagar disco, sem contas automáticas, sem bypass)." -ForegroundColor Green
+    Write-Log "Nenhum item encontrado no unattend."
+
+}
+else {
+
+    foreach ($Category in $Categories.Keys) {
+
+        Write-Host ""
+        Write-Host "=== $Category ===" -ForegroundColor Cyan
+
+        foreach ($Item in $Categories[$Category]) {
+
+            $TotalItems++
+
+            if ($Item.Level -eq "warn") {
+                $HasWarnings = $true
+                Write-Host "  ⚠ $($Item.Text)" -ForegroundColor Yellow
+            }
+            else {
+                Write-Host "  ✔ $($Item.Text)" -ForegroundColor Gray
+            }
+
+        }
+
+    }
+
+    Write-Host ""
+
+    if ($HasWarnings) {
+
+        Write-Host "Itens marcados com ⚠ merecem atenção especial (perda de dados, segurança reduzida, etc.)." -ForegroundColor Yellow
+        Write-Host "Digite SIM (maiúsculo) para confirmar que está ciente e continuar." -ForegroundColor Yellow
+        Write-Host "Ou apenas ENTER para cancelar o build e revisar o arquivo." -ForegroundColor Yellow
+        Write-Host ""
+
+        $Confirm = Read-Host "Confirmação"
+
+        if ($Confirm -cne "SIM") {
+
+            Write-Log "Build cancelado - usuário não confirmou o conteúdo do unattend.xml." "ERROR"
+            Set-Summary "Unattend" "Cancelado na confirmação"
+            exit 1
+
+        }
+
+        Write-Log "Usuário confirmou ciência do conteúdo do unattend.xml ($TotalItems item(s), com avisos)." "SUCCESS"
+
+    }
+    else {
+
+        Write-Log "$TotalItems item(s) detectado(s) no unattend, nenhum com nível de atenção especial." "SUCCESS"
+
+    }
+
+}
+
+Write-Host ""
+
+# ----------------------------------------------------------
 # Copiar para a raiz da mídia
 # ----------------------------------------------------------
 
